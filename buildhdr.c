@@ -87,7 +87,7 @@ pat_macro_prefix(
 ) {
    static const cpat_t *pat = NULL;
    if (pat == NULL) {
-      pat = compile_pattern("^[A-Z][A-Z_]*$");
+      pat = compile_pattern("^[A-Z][A-Z_0-9]*$");
       abort_if(pat == NULL,
                "could not compile macro prefix pattern");
    }
