@@ -6,9 +6,9 @@
 
 
 CC=clang
-# CFLAGS=-Wall -g3 -std=c99
-# CFLAGS=-fsanitize=address -Wall -g3 -O0 -std=c99
-CFLAGS=-Wall -O2 -std=c99
+# CFLAGS=-Wall -g3 -std=c18
+# CFLAGS=-fsanitize=address -Wall -g3 -O0 -std=c18
+CFLAGS=-Wall -O2 -std=c18
 # LDFLAGS=-lm
 LDFLAGS=
 
