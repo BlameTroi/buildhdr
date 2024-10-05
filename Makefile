@@ -2,27 +2,28 @@
 
 .POSIX:
 
-.PHONY: clean all run
+.PHONY: clean all debug
 
+BUILD_DIR = build
 
 CC=clang
-# CFLAGS=-Wall -g3 -std=c18
-# CFLAGS=-fsanitize=address -Wall -g3 -O0 -std=c18
-CFLAGS=-Wall -O2 -std=c18
+DFLAGS=-fsanitize=address -g3 -O0 -DDEBUG
+CFLAGS=-Wall -pedantic-errors -O2 -std=c18
 # LDFLAGS=-lm
 LDFLAGS=
 
+.PHONY: debug
+debug: CFLAGS+=$(DFLAGS)
+debug: all
 
 all: buildhdr
 
 clean:
-	rm -rf *.o *.dSYM/ buildhdr 
-
-
+	rm -rf $(BUILD_DIR)/*
 
 buildhdr.o: buildhdr.c
-	$(CC) $(CFLAGS) -c buildhdr.c
+	$(CC) $(CFLAGS) -o $(BUILD_DIR)/buildhdr.o -c buildhdr.c
 
 
 buildhdr: buildhdr.o
-	$(CC) $(CFLAGS) -o buildhdr buildhdr.o $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $(BUILD_DIR)/buildhdr $(BUILD_DIR)/buildhdr.o $(LDFLAGS)

@@ -47,6 +47,7 @@ typedef struct ctx_t {
 	int argc;                         /* from main */
 	const char **argv;
 	const char *macro_prefix;         /* --macro NAME */
+	const char *fix_prefix;           /* --fix-prefix */
 	int intro_start;                  /* --intro _here_ */
 	int intro_count;                  /*         count to next -- */
 	int pub_start;                    /* --pub */
@@ -59,6 +60,7 @@ typedef struct ctx_t {
 
 ctx_t ctx = {
 	0,
+	NULL,
 	NULL,
 	NULL,
 	-1,
@@ -78,6 +80,11 @@ ctx_t ctx = {
 /*
  * lazy initializers for match patterns.
  */
+
+/*
+ * macros should be uppercase.
+ */
+
 const cpat *
 pat_macro_prefix(
 	void
@@ -90,6 +97,27 @@ pat_macro_prefix(
 	}
 	return pat;
 }
+
+/*
+ * file names should be lowercase.
+ */
+
+const cpat *
+pat_fix_prefix(
+	void
+) {
+	static const cpat *pat = NULL;
+	if (pat == NULL) {
+		pat = compile_pattern("^[a-z][a-z_0-9]*$");
+		assert(pat &&
+			"could not compile fix prefix pattern");
+	}
+	return pat;
+}
+
+/*
+ * any include
+ */
 
 const cpat *
 pat_include_prefix(
@@ -105,11 +133,38 @@ pat_include_prefix(
 }
 
 /*
+ * non system include
+ */
+
+const cpat *
+pat_fixable_prefix(
+	void
+) {
+	static const cpat *pat = NULL;
+	if (pat == NULL) {
+		pat = compile_pattern("^ *#include +\"\\.\\./");
+		assert(pat &&
+			"could not compile fixable prefix pattern");
+	}
+	return pat;
+}
+
+/*
  * is a string a valid macro prefix?
  */
+
 bool
 is_valid_macro_prefix(const char *str) {
 	return match(str, pat_macro_prefix());
+}
+
+/*
+ * or fix prefix?
+ */
+
+bool
+is_valid_fix_prefix(const char *str) {
+	return match(str, pat_fix_prefix());
 }
 
 /*
@@ -123,12 +178,12 @@ is_longopt(
 }
 
 /*
- * get filename from end of a path.
+ * get filename (sans extension) from the end of a path.
  */
 
 const
 char *
-get_filename(
+get_filename_path(
 	const char *str
 ) {
 	const char *result = NULL;
@@ -142,8 +197,28 @@ get_filename(
 }
 
 /*
+ * get the filename and extension from the end of an #include directive.
+ */
+
+const
+char *
+get_filename_include(
+	const char *str
+) {
+	const char *result = NULL;
+	const char **tokens = split_string(str, "/\\:#\"\n");
+	int i = 1;
+	while (tokens[i])
+		i++;
+	result = strdup(tokens[i-1]);
+	free_split(tokens);
+	return result;
+}
+
+/*
  * is a string a possible end of argment flag (--)?
  */
+
 bool
 is_endarg(
 	const char *str
@@ -163,8 +238,8 @@ is_formfeed(
 }
 
 /*
- * if the line is a #includde directive, does it reference one of the
- * file in --priv? if so, it should be suppressed.
+ * if the line is an #include directive, does it reference one of the
+ * files in --priv? if so, it should be suppressed.
  */
 
 bool
@@ -184,6 +259,55 @@ is_suppressable_header(
 		free((void *)pat);
 	}
 	return false;
+}
+
+/*
+ * if the line is an #include directive, does it reference a local include?
+ * "../inc/xx.h"? if so, replace "../inc/" with ctx.macro_prefix
+ */
+
+bool
+is_fixable_header(
+	char *str
+) {
+	if (!match(str, pat_fixable_prefix()))
+		return false;
+	return true;
+}
+
+char
+to_lowercase(
+	char c
+) {
+	return c + ('a' - 'A');
+}
+
+char *
+fix_header(
+	char *str
+) {
+	if (ctx.fix_prefix == NULL) {
+		fprintf(stderr, "no fix-prefix found, defaulting to start of macro-prefix\n");
+		/* this leak doesn't matter */
+		char *leaks = strdup(ctx.macro_prefix);
+		if (strlen(leaks) > 3)
+			leaks[3] = '\0';
+		int i = 0;
+		while (leaks[i]) {
+			if (is_uppercase(leaks[i]))
+				leaks[i] = to_lowercase(leaks[i]);
+			i += 1;
+		}
+		ctx.fix_prefix = leaks;
+	}
+	const char *name = get_filename_include(str);
+	size_t over_allocate = strlen(str) * 2 + strlen(name) * 2;
+	char *buffer = malloc(over_allocate);
+	memset(buffer, 0, over_allocate);
+	snprintf(buffer, over_allocate, "#include \"%s%s\"\n", ctx.fix_prefix,
+		name);
+	free((void *)name);
+	return buffer;
 }
 
 /*
@@ -206,7 +330,7 @@ get_longopt(
 		return -1;
 	int i = 0;
 	while (ctx.argv[i] && !is_endarg(ctx.argv[i])) {
-		if (strcmp(str, ctx.argv[i]) == 0)
+		if (equal_string(str, ctx.argv[i]))
 			return i;
 		i += 1;
 	}
@@ -231,9 +355,9 @@ get_next_optval(
 	int i
 ) {
 	if (ctx.argv[i] == NULL ||
-		ctx.argv[i+1] == NULL ||
-		is_longopt(ctx.argv[i+1]) ||
-		is_endarg(ctx.argv[i+1])) {
+	ctx.argv[i+1] == NULL ||
+				is_longopt(ctx.argv[i+1]) ||
+				is_endarg(ctx.argv[i+1])) {
 		return -1;
 	}
 	return i+1;
@@ -259,6 +383,34 @@ get_macro_prefix(
 }
 
 /*
+ * get_fix_prefix
+ *
+ * fix up includes of other headers in development mode and
+ * convert them to release format. in other words:
+ *
+ * #include "../inc/<not-this-pub-filename>.h"
+ *
+ * becomes:
+ *
+ * #include "<fix-prefix><not-this-pub-filename>.h"
+ *
+ * placement of #defines for implementation generation
+ * is left for the user.
+ */
+const char *
+get_fix_prefix(
+	void
+) {
+	int i = get_longopt("--fix-prefix");
+	if (i == -1 || ctx.argv[i] == NULL)
+		return NULL;
+	i = get_next_optval(i);
+	if (i == -1 || !is_valid_fix_prefix(ctx.argv[i]))
+		return NULL;
+	return ctx.argv[i];
+}
+
+/*
  * usage and error reporting.
  */
 
@@ -270,27 +422,40 @@ usage(
 		where = stdout;
 	}
 	fprintf(where,
-		"usage: %s --macro MACRO_PREFIX [--intro <files>] --pub <files> [--priv <files>] [--outro <files>]\n\n",
-		get_filename(ctx.argv[0]));
+		"usage: %s --macro MACRO_PREFIX [--intro <files>] --pub <files> [--priv <files>] [--outro <files>] [--fix-prefix] <lowercase macro prefix>\n\n",
+		get_filename_path(ctx.argv[0]));
 	fprintf(where,
 		"Combines one or more files to create a C single file header library.\n\n");
-	fprintf(where, " --macro  required  is a prefix for header guard macros.\n");
 	fprintf(where,
-		" --intro  optional  one or more plain text files to include in a doc\n");
-	fprintf(where, "                    block at the start of the output file.\n");
+		" --macro       required  is a prefix for header guard macros.\n");
 	fprintf(where,
-		" --pub    required  one or more C files containing externally visible\n");
+		" --intro       optional  one or more plain text files to include in a doc\n");
 	fprintf(where,
-		"                    declarations to be compiled in an #ifdef MACRO_PREFIX_H\n");
-	fprintf(where, "                    block.\n");
+		"                         block at the start of the output file.\n");
 	fprintf(where,
-		" --priv   optional  one or more C files containing executable code to\n");
+		" --pub         required  one or more C files containing externally visible\n");
 	fprintf(where,
-		"                    be compiled in an #ifdef MACRO_PREFIX_H_IMPLEMENTATION\n");
-	fprintf(where, "                    block.\n");
+		"                         declarations to be compiled in an #ifdef MACRO_PREFIX_H\n");
+	fprintf(where, "                         block.\n");
 	fprintf(where,
-		" --outro  optional  one or more plain text files to include in a doc\n");
-	fprintf(where, "                    block at the end of the output file.\n\n");
+		" --priv        optional  one or more C files containing executable code to\n");
+	fprintf(where,
+		"                         be compiled in an #ifdef MACRO_PREFIX_H_IMPLEMENTATION\n");
+	fprintf(where, "                         block.\n");
+	fprintf(where,
+		" --outro       optional  one or more plain text files to include in a doc\n");
+	fprintf(where,
+		"                         block at the end of the output file.\n");
+	fprintf(where,
+		" --fix-prefix  optional  if your public .c file includes dependencies\n");
+	fprintf(where,
+		"                         on other in library sources that have not been\n");
+	fprintf(where,
+		"                         packaged (as in \"#include \"..\\inc\\other.h\"\n");
+	fprintf(where,
+		"                         this prefix will be used to create an include\n");
+	fprintf(where,
+		"                         for the packaged library as \"<prefix>other.h\"\n\n");
 }
 
 /*
@@ -307,9 +472,9 @@ wants_help(
 ) {
 	/* there are many ways to ask for help, respond to the ones we know. */
 	for (int i = 1; i < ctx.argc; i++)
-		if (strcmp("-?", ctx.argv[i]) == 0 ||
-			strcmp("-h", ctx.argv[i]) == 0 ||
-			strcmp("--help", ctx.argv[i]) == 0)
+		if (equal_string("-?", ctx.argv[i]) ||
+			equal_string("-h", ctx.argv[i]) ||
+			equal_string("--help", ctx.argv[i]))
 			return true;
 	return false;
 }
@@ -333,20 +498,26 @@ arguments_ok(
 		bad_args = true;
 	}
 
+	ctx.fix_prefix = get_fix_prefix();
+
+
 	int i = 1;
 	while (ctx.argv[i]) {
 		if (is_longopt(ctx.argv[i])) {
-			if (strcmp("--macro", ctx.argv[i]) == 0) {
+			if (equal_string("--macro", ctx.argv[i])) {
 				i += 2;
 				continue;
-			} else if (strcmp("--intro", ctx.argv[i]) == 0 && ctx.intro_start == -1) {
+			} else if (equal_string("--intro", ctx.argv[i]) && ctx.intro_start == -1) {
 				ctx.intro_start = i;
-			} else if (strcmp("--pub", ctx.argv[i]) == 0 && ctx.pub_start == -1) {
+			} else if (equal_string("--pub", ctx.argv[i]) && ctx.pub_start == -1) {
 				ctx.pub_start = i;
-			} else if (strcmp("--priv", ctx.argv[i]) == 0 && ctx.priv_start == -1) {
+			} else if (equal_string("--priv", ctx.argv[i]) && ctx.priv_start == -1) {
 				ctx.priv_start = i;
-			} else if (strcmp("--outro", ctx.argv[i]) == 0 && ctx.outro_start == -1) {
+			} else if (equal_string("--outro", ctx.argv[i]) && ctx.outro_start == -1) {
 				ctx.outro_start = i;
+			} else if (equal_string("--fix-prefix", ctx.argv[i])) {
+				i += 2;
+				continue;
 			} else {
 				fprintf(stderr, "unknown or redundant option %s\n", ctx.argv[i]);
 				bad_args = true;
@@ -482,12 +653,19 @@ print_file_suppress_headers(
 			fputs(line_buffer+1, where);
 			continue;
 		}
+		if (is_fixable_header(line_buffer)) {
+			char *fixed = fix_header(line_buffer);
+			fputs(fixed, where);
+			free(fixed);
+			continue;
+		}
 		fputs(line_buffer, where);
 	}
 	if (ferror(there)) {
 		fprintf(stderr, "error %d reading file %s\n", errno, name);
 		exit(EXIT_FAILURE);
 	}
+	free(line_buffer);
 	fclose(there);
 }
 
@@ -507,7 +685,7 @@ write_intro(
 	fprintf(stdout, "/*\n * single file header generated via:\n");
 	for (int i = 0; i < ctx.argc; i++)
 		if (i == 0)
-			fprintf(stdout, " * %s ", get_filename(ctx.argv[i]));
+			fprintf(stdout, " * %s ", get_filename_path(ctx.argv[i]));
 		else
 			fprintf(stdout, "%s ", ctx.argv[i]);
 
