@@ -13,11 +13,11 @@ CFLAGS=-Wall -O2 -std=c18
 LDFLAGS=
 
 
+all: buildhdr
+
 clean:
 	rm -rf *.o *.dSYM/ buildhdr 
 
-
-all: buildhdr
 
 
 buildhdr.o: buildhdr.c

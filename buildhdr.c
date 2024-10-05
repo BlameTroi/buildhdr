@@ -134,12 +134,10 @@ get_filename(
 	const char *result = NULL;
 	const char **tokens = split_string(str, "/\\:");
 	int i = 1;
-	while (tokens[i]) {
+	while (tokens[i])
 		i += 1;
-	}
 	result = strdup(tokens[i-1]);
-	free((void *)tokens[0]);
-	free(tokens);
+	free_split(tokens);
 	return result;
 }
 
@@ -173,18 +171,16 @@ bool
 is_suppressable_header(
 	char *str
 ) {
-	if (!match(str, pat_include_prefix())) {
+	if (!match(str, pat_include_prefix()))
 		return false;
-	}
 	for (int i = 0; i < ctx.pub_count; i++) {
 		/* the .h in the filename will treat the . as a wildcard, but that's
 		 * good enough for our purposes. */
 		const cpat *pat = compile_pattern(ctx.argv[ctx.pub_start + 1 + i]);
 		assert(pat &&
 			"could not compile suppressable header file name pattern");
-		if (match(str, pat)) {
+		if (match(str, pat))
 			return true;
-		}
 		free((void *)pat);
 	}
 	return false;
@@ -206,14 +202,12 @@ int
 get_longopt(
 	const char *str
 ) {
-	if (ctx.argv == NULL || str == NULL || *str == '\0' || !is_longopt(str)) {
+	if (ctx.argv == NULL || str == NULL || *str == '\0' || !is_longopt(str))
 		return -1;
-	}
 	int i = 0;
 	while (ctx.argv[i] && !is_endarg(ctx.argv[i])) {
-		if (strcmp(str, ctx.argv[i]) == 0) {
+		if (strcmp(str, ctx.argv[i]) == 0)
 			return i;
-		}
 		i += 1;
 	}
 	return -1;
@@ -256,13 +250,11 @@ get_macro_prefix(
 	void
 ) {
 	int i = get_longopt("--macro");
-	if (i == -1 || ctx.argv[i] == NULL) {
+	if (i == -1 || ctx.argv[i] == NULL)
 		return NULL;
-	}
 	i = get_next_optval(i);
-	if (i == -1 || !is_valid_macro_prefix(ctx.argv[i])) {
+	if (i == -1 || !is_valid_macro_prefix(ctx.argv[i]))
 		return NULL;
-	}
 	return ctx.argv[i];
 }
 
@@ -314,13 +306,11 @@ wants_help(
 	void
 ) {
 	/* there are many ways to ask for help, respond to the ones we know. */
-	for (int i = 1; i < ctx.argc; i++) {
+	for (int i = 1; i < ctx.argc; i++)
 		if (strcmp("-?", ctx.argv[i]) == 0 ||
 			strcmp("-h", ctx.argv[i]) == 0 ||
-			strcmp("--help", ctx.argv[i]) == 0) {
+			strcmp("--help", ctx.argv[i]) == 0)
 			return true;
-		}
-	}
 	return false;
 }
 
@@ -368,9 +358,8 @@ arguments_ok(
 		i += 1;
 	}
 
-	if (bad_args || ctx.pub_start == -1) {
+	if (bad_args || ctx.pub_start == -1)
 		fprintf(stderr, "missing or invalid arguments\n");
-	}
 
 	/* make sure we have at least one public file */
 
@@ -516,19 +505,17 @@ write_intro(
 	void
 ) {
 	fprintf(stdout, "/*\n * single file header generated via:\n");
-	for (int i = 0; i < ctx.argc; i++) {
-		if (i == 0) {
+	for (int i = 0; i < ctx.argc; i++)
+		if (i == 0)
 			fprintf(stdout, " * %s ", get_filename(ctx.argv[i]));
-		} else {
+		else
 			fprintf(stdout, "%s ", ctx.argv[i]);
-		}
-	}
+
 	fprintf(stdout, "\n */\n");
 	if (ctx.intro_count > 0) {
 		fprintf(stdout, "/* *** begin intro ***\n");
-		for (int i = 0; i < ctx.intro_count; i++) {
+		for (int i = 0; i < ctx.intro_count; i++)
 			print_file(stdout, ctx.argv[ctx.intro_start + 1 + i]);
-		}
 		fprintf(stdout, "   *** end intro ***\n");
 		fprintf(stdout, " */\n");
 	}
@@ -542,9 +529,8 @@ write_pub(
 	fprintf(stdout, "#define %s_SINGLE_HEADER\n", ctx.macro_prefix);
 	if (ctx.pub_count > 0) {
 		fprintf(stdout, "/* *** begin pub *** */\n");
-		for (int i = 0; i < ctx.pub_count; i++) {
+		for (int i = 0; i < ctx.pub_count; i++)
 			print_file(stdout, ctx.argv[ctx.pub_start + 1 + i]);
-		}
 		fprintf(stdout, "/* *** end pub *** */\n");
 	}
 	fprintf(stdout, "\n#endif /* %s_SINGLE_HEADER */\n", ctx.macro_prefix);
@@ -558,9 +544,8 @@ write_priv(
 	fprintf(stdout, "#undef %s_IMPLEMENTATION\n", ctx.macro_prefix);
 	if (ctx.priv_count > 0) {
 		fprintf(stdout, "/* *** begin priv *** */\n");
-		for (int i = 0; i < ctx.priv_count; i++) {
+		for (int i = 0; i < ctx.priv_count; i++)
 			print_file_suppress_headers(stdout, ctx.argv[ctx.priv_start + 1 + i]);
-		}
 		fprintf(stdout, "/* *** end priv *** */\n");
 	}
 	fprintf(stdout, "\n#endif /* %s_IMPLEMENTATION */\n", ctx.macro_prefix);
@@ -572,9 +557,8 @@ write_outro(
 ) {
 	if (ctx.outro_count > 0) {
 		fprintf(stdout, "/* *** begin outro ***\n");
-		for (int i = 0; i < ctx.intro_count; i++) {
+		for (int i = 0; i < ctx.intro_count; i++)
 			print_file(stdout, ctx.argv[ctx.intro_start + 1 + i]);
-		}
 		fprintf(stdout, "   *** end outro ***\n");
 		fprintf(stdout, " */\n");
 	}
