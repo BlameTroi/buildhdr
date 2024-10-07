@@ -251,7 +251,9 @@ is_suppressable_header(
 	for (int i = 0; i < ctx.pub_count; i++) {
 		/* the .h in the filename will treat the . as a wildcard, but that's
 		 * good enough for our purposes. */
-		const cpat *pat = compile_pattern(ctx.argv[ctx.pub_start + 1 + i]);
+		const char *fname = get_filename_include(ctx.argv[ctx.pub_start + 1 + i]);
+		const cpat *pat = compile_pattern(fname);
+		free((void *)fname);
 		assert(pat &&
 			"could not compile suppressable header file name pattern");
 		if (match(str, pat))
