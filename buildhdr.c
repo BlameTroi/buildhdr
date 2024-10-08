@@ -10,6 +10,7 @@
  *          --pub <files>
  *         [--priv <files>]
  *         [--outro <files>]
+ *         [--fix-prefix FIX_PREFIX]
  *
  * the component files are wrapped with a header and implementation
  * guards and writtent ot standard output.
@@ -28,6 +29,10 @@
 #include <string.h>
 #include <sys/unistd.h>
 #include <unistd.h>
+
+/*
+ * a bit of chicken and egg here.
+ */
 
 #define TXBSTR_IMPLEMENTATION
 #include "txbstr.h"
